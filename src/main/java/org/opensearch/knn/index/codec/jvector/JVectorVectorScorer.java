@@ -18,12 +18,19 @@ public class JVectorVectorScorer implements VectorScorer {
     private final KnnVectorValues.DocIndexIterator docIndexIterator;
     private final VectorFloat<?> target;
     private final VectorSimilarityFunction similarityFunction;
+    private final org.apache.lucene.index.VectorSimilarityFunction luceneSimilarityFunction;
 
-    public JVectorVectorScorer(JVectorFloatVectorValues vectorValues, VectorFloat<?> target, VectorSimilarityFunction similarityFunction) {
+    public JVectorVectorScorer(
+        JVectorFloatVectorValues vectorValues,
+        VectorFloat<?> target,
+        VectorSimilarityFunction similarityFunction,
+        org.apache.lucene.index.VectorSimilarityFunction luceneSimilarityFunction
+    ) {
         this.floatVectorValues = vectorValues;
         this.docIndexIterator = floatVectorValues.iterator();
         this.target = target;
         this.similarityFunction = similarityFunction;
+        this.luceneSimilarityFunction = luceneSimilarityFunction;
     }
 
     @Override
@@ -32,7 +39,18 @@ public class JVectorVectorScorer implements VectorScorer {
         if (index == GraphNodeIdToDocMap.NO_VECTOR_OR_DELETED_DOC) {
             return 0.0f;
         }
-        return similarityFunction.compare(target, floatVectorValues.vectorFloatValue(index));
+
+        float rawScore = similarityFunction.compare(target, floatVectorValues.vectorFloatValue(index));
+
+        // Lucene's MAXIMUM_INNER_PRODUCT formula is: 1 + dotProduct
+        // jVector's DOT_PRODUCT returns: (1 + dotProduct) / 2
+        // To convert: score * 2 = (1 + dotProduct) / 2 * 2 = 1 + dotProduct
+        if (luceneSimilarityFunction == org.apache.lucene.index.VectorSimilarityFunction.MAXIMUM_INNER_PRODUCT
+            && similarityFunction == VectorSimilarityFunction.DOT_PRODUCT) {
+            rawScore = rawScore * 2.0f;
+        }
+
+        return rawScore;
     }
 
     @Override
